@@ -1,0 +1,367 @@
+---
+title: "Differential Gene Expression Analysis"
+author: "Wenjing Meng"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+# 1Count normalization
+## 1.1Install packages
+Install DESeq2 package
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("DESeq2")
+```
+install EdgeR package because we need the readDGE function
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("edgeR")
+```
+
+## 1.2Read data files
+Set to the current work directory
+```{r}
+setwd("D:/PHD/Courses/Practical Course in Boinformatics/DIferentialGeneExpressionAnalysis/RNA_seq_DEA")
+```
+read raw data
+```{r}
+Coinfection.targets<-read.delim("./data/fileDesc.txt")
+```
+change the rawnames of the dataframe 
+```{r}
+rownames(Coinfection.targets)<-c("Ha1","Ha2","Ha3","Ctr1","Ctr2","Ctr3")
+```
+load the packege edgeR
+```{r}
+library(edgeR)
+```
+read the six .txt files listed in Coinfection.targets
+```{r}
+Coinfection.orig <- readDGE(Coinfection.targets, header=F)
+```
+check the dimension of the data set
+```{r}
+dim(Coinfection.orig)
+```
+check the first 6 rows of the data
+```{r}
+head(Coinfection.orig)
+```
+Extract counts dataframe
+```{r}
+Coinfection.rawCount <- Coinfection.orig$count
+dim(Coinfection.rawCount)
+```
+```{r}
+head(Coinfection.rawCount)
+```
+## 1.3Build meta data
+```{r}
+sampletype <- factor(c(rep("Ha",3), rep("Ctr", 3)))
+```
+Build meta data frame
+```{r}
+meta <- data.frame(sampletype, row.names = colnames(Coinfection.orig$count))
+```
+Check the column name of counts dataframe
+```{r}
+colnames(Coinfection.orig$count)
+```
+Check the rowname of meta dataframe
+```{r}
+rownames(meta)
+```
+Check that sample names match in both files
+```{r}
+all(colnames(Coinfection.orig$count) %in% rownames(meta))
+```
+## 1.4 Create DESeqDataset object
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(Coinfection.orig, colData = meta, design = ~ sampletype)
+```
+## 1.5 Generate size factors
+To perform the median of ratios method of normalization, DESeq2 has a single estimateSizeFactors() function that will generate size factors.
+```{r}
+dds <- estimateSizeFactors(dds)
+```
+Look at the normalization factor applied to each sample
+```{r}
+sizeFactors(dds)
+```
+## 1.6 Generate the normalized counts
+Retrieve the normalized counts matrix from dds
+```{r}
+normalized_counts <- counts(dds, normalized=TRUE)
+```
+Save the normalized_counts
+```{r}
+write.csv(normalized_counts, file="./results/coinfection_normalized_counts_DESeq2.csv")
+```
+
+# 2 Sample-level quality Control
+## 2.1 Principal Component Analysis (PCA)
+Transform counts for data visualization
+```{r}
+rld <- rlog(dds, blind=TRUE)
+```
+ **start with PCA*
+```{r}
+plotPCA(rld, intgroup="sampletype")
+```
+save PDF file
+```{r}
+pdf("./results/PlotPCA_dds.pdf")
+plotPCA(rld, intgroup="sampletype")
+dev.off()
+```
+**Exercise**:
+1.What does the above plot tell you about the similarity of samples?
+2.Does it fit the expectation from the experimental design?
+3.What do you think the %variance information (in the axes titles) tell you about the data in the context of the PCA?
+
+1.The control group and HA-infected group seperated significantly.
+2.Yes.
+3.PC1 captures half of the patterns or differences present in the data, making it the most significant axis in terms of explaining the variance.PC2 explains 25% of the total variance, so together the two axes explained 75% variation.
+
+##2.2 Hierarchical Clustering Heatmap
+Extract the rlog matrix from the object
+```{r}
+rld_mat <- assay(rld)
+```
+Compute the pairwise correlation values for all the samples
+```{r}
+rld_cor <- cor(rld_mat) 
+```
+Check the output of cor(), make note of the row names and column names
+```{r}
+head(rld_cor)
+```
+Check meta
+```{r}
+head(meta)
+```
+Install pheatmap package and load the package
+```{r}
+install.packages("pheatmap")
+```
+Plot heatmap using the correlation matrix and the metadata object
+```{r}
+library(pheatmap)
+pheatmap(rld_cor, annotation = meta)
+```
+Change colors
+```{r}
+heat.colors <- RColorBrewer::brewer.pal(6, "Blues")
+pheatmap(rld_cor, annotation = meta, color = heat.colors, border_color=NA, fontsize = 10, 
+        fontsize_row = 10, height=20)
+```
+Out put PDF file
+```{r}
+pdf("./results/PlotHeatmap_dds.pdf")
+heat.colors <- RColorBrewer::brewer.pal(6, "Blues")
+pheatmap(rld_cor, annotation = meta, color = heat.colors, border_color=NA, fontsize = 10, 
+        fontsize_row = 10, height=20)
+```
+
+# 3 Differential expression analysis (DEA) using EdgeR
+load EdgeR package
+```{r}
+library(edgeR)
+options(digits=3)
+```
+Tell R where the data files are
+```{r}
+infection.targets<-read.delim("./data/fileDesc.txt")
+```
+Check Coinfection.targets
+```{r}
+infection.targets
+```
+Change the rawnames of the dataframe Coinfection.targets, 
+```{r}
+rownames(infection.targets)<-c("Ha1","Ha2","Ha3","Ctr1","Ctr2","Ctr3")
+```
+Check Coinfection.targets again
+```{r}
+infection.targets
+```
+read and merges a set of text files containing gene expression counts, it makes a DGEList object directly
+```{r}
+infection <- readDGE(infection.targets, header=F)
+```
+Check the dimension of DGElist R object
+```{r}
+dim(infection)
+```
+```{r}
+head(infection)
+```
+Get the raw mapped count before filtering
+```{r}
+infection.rawCount <- infection$count
+head(infection.rawCount)
+```
+```{r}
+library(ggplot2)
+```
+To get an idea about how RNA-seq counts are distributed,  plot a histogram of the counts for a single sample, ‘Ha1’:
+```{r}
+ggplot(infection.rawCount) +
+  geom_histogram(aes(x = Ha1), stat = "bin", bins = 200) +
+  xlab("Raw expression counts") +
+  ylab("Number of genes")
+```
+Export the .png file
+```{r}
+png("./results/count distribution.png", res=300, height=1800, width=1800)
+ggplot(infection.rawCount) +
+  geom_histogram(aes(x = Ha1), stat = "bin", bins = 200) +
+  xlab("Raw expression counts") +
+  ylab("Number of genes")
+dev.off()
+```
+Export raw count table into results folder
+```{r}
+write.csv(infection.rawCount, file="./results/infection.rawCounts.csv")
+```
+Get the counts per million (TMM normalised) before filtering
+```{r}
+infection.normCPM <- cpm(calcNormFactors(infection))
+dim(infection.normCPM)
+```
+```{r}
+head(infection.normCPM)
+```
+```{r}
+write.csv(infection.normCPM, file="./results/infection.normCPM.csv")
+```
+Keep genes that are expressed at least 1 CPM in at least 3 libraries, normally it is the number of biological replicates of smaller group
+```{r}
+infection.filtered <- rowSums(cpm(infection)>1) >=3
+```
+```{r}
+table(infection.filtered)
+```
+Libraries size of data BEFORE filtering
+```{r}
+infection$samples$lib.size
+```
+cover the original file with our filter data
+```{r}
+Infection <- infection[infection.filtered,]
+```
+libraries size of data after filtering
+```{r}
+colSums(Infection$counts)
+```
+```{r}
+dim(Infection)
+```
+Update the filtered libraries size
+```{r}
+Infection$samples$lib.size <- colSums(Infection$counts)
+Infection$samples
+```
+Perform normalization with TMM method
+```{r}
+Infection = calcNormFactors(Infection)
+```
+The libraries after normalisation
+```{r}
+Infection$samples
+```
+Get the counts per million (TMM normalised) after filtering
+```{r}
+Infection.filtered.normCPM <-cpm(calcNormFactors(Infection))
+```
+Export TMM normalized count table after filtering
+```{r}
+write.csv(Infection.filtered.normCPM, file="./results/Infection.filtered.normCPM.csv")
+```
+## differentailly gene expression analysis
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
